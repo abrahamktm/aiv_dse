@@ -18,15 +18,41 @@ from typing import Any, Dict, Optional
 
 from aiv_dse.core.state import METRIC_FIELDS
 from aiv_dse.core.validator import ValidationResult
-from aiv_dse.llm.config import LLMSettings, get_llm
+from aiv_dse.llm.config import LLMSettings, get_llm, get_judge_settings
 from aiv_dse.llm.models import (
+    AdjustmentScore,
     CodeAdvisoryReport,
     CodeProfile,
     JudgeVerdict,
+    PRMJudgeVerdict,
     SynthParamProposal,
     SynthesisParams,
 )
 from aiv_dse.tracing import observe
+
+
+def _thinking_enabled() -> bool:
+    """Whether extended-thinking mode is enabled on the judge (opt-in via env var)."""
+    return os.getenv("AIVDSE_JUDGE_THINKING", "0") == "1"
+
+
+def _thinking_budget() -> int:
+    """Token budget for extended thinking on the judge."""
+    return int(os.getenv("AIVDSE_JUDGE_THINKING_BUDGET", "2048"))
+
+
+def _build_system_blocks(prompt: str) -> list:
+    """Build system prompt as a list with prompt caching enabled.
+
+    Prompt caching cuts ~90% off the input cost and ~2x latency on repeat calls
+    by sharing the system prompt across requests within the cache TTL.
+    Only applies in the direct Anthropic SDK path.
+    """
+    return [{
+        "type": "text",
+        "text": prompt,
+        "cache_control": {"type": "ephemeral"},
+    }]
 
 JUDGE_SYSTEM_PROMPT = """\
 You are reviewing another AI's proposal for synthesis parameter changes.
@@ -167,16 +193,33 @@ def _judge_via_anthropic(
 
     client = anthropic.Anthropic()
 
+    # Extended thinking + forced tool_choice is mutually exclusive.
+    # When thinking is enabled, switch to auto tool_choice + instruct in system prompt.
+    if _thinking_enabled():
+        system_prompt = JUDGE_SYSTEM_PROMPT + "\n\nYou MUST call the judge_verdict tool to return your verdict."
+        tool_choice = {"type": "auto"}
+        max_tokens = 4096
+        extra_kwargs = {
+            "thinking": {"type": "enabled", "budget_tokens": _thinking_budget()},
+            "temperature": 1.0,
+        }
+    else:
+        system_prompt = JUDGE_SYSTEM_PROMPT
+        tool_choice = {"type": "tool", "name": "judge_verdict"}
+        max_tokens = 1024
+        extra_kwargs = {}
+
     last_error = None
     for attempt in range(1, settings.max_retries + 1):
         try:
             response = client.messages.create(
                 model=settings.model_name,
-                max_tokens=1024,
-                system=JUDGE_SYSTEM_PROMPT,
+                max_tokens=max_tokens,
+                system=_build_system_blocks(system_prompt),
                 messages=[{"role": "user", "content": context}],
                 tools=[_JUDGE_TOOL_SCHEMA],
-                tool_choice={"type": "tool", "name": "judge_verdict"},
+                tool_choice=tool_choice,
+                **extra_kwargs,
             )
 
             tool_block = None
@@ -215,15 +258,11 @@ def judge_proposal(
     Uses a DIFFERENT provider than the advisor when possible:
     if advisor used OpenAI, judge uses Anthropic, and vice versa.
     """
-    # Try to use a different provider for adversarial diversity
-    judge_settings = LLMSettings(
-        provider=settings.provider,
-        model_name=settings.model_name,
-        sdk_mode=settings.sdk_mode,
-        max_retries=settings.max_retries,
-        log_llm_io=settings.log_llm_io,
-        log_dir=settings.log_dir,
-    )
+    # Use a DIFFERENT provider for adversarial diversity when possible.
+    # get_judge_settings() prefers an "opposite" provider (e.g. anthropic advisor
+    # → google judge) when that provider's API key is configured. Falls back to
+    # same provider when only one is configured.
+    judge_settings = get_judge_settings(settings)
 
     context = _format_judge_context(
         proposal, policy, state, result, current_params
@@ -322,14 +361,8 @@ def judge_code_advisory(
     settings: LLMSettings,
 ) -> JudgeVerdict:
     """Have a second LLM judge review code-level optimization suggestions."""
-    judge_settings = LLMSettings(
-        provider=settings.provider,
-        model_name=settings.model_name,
-        sdk_mode=settings.sdk_mode,
-        max_retries=settings.max_retries,
-        log_llm_io=settings.log_llm_io,
-        log_dir=settings.log_dir,
-    )
+    # Use a different provider for adversarial diversity (same logic as judge_proposal)
+    judge_settings = get_judge_settings(settings)
 
     context = _format_code_judge_context(
         advisory, profile, result, current_params
@@ -342,7 +375,7 @@ def judge_code_advisory(
         response = client.messages.create(
             model=judge_settings.model_name,
             max_tokens=1024,
-            system=CODE_JUDGE_SYSTEM_PROMPT,
+            system=_build_system_blocks(CODE_JUDGE_SYSTEM_PROMPT),
             messages=[{"role": "user", "content": context}],
             tools=[_JUDGE_TOOL_SCHEMA],
             tool_choice={"type": "tool", "name": "judge_verdict"},
@@ -373,3 +406,186 @@ def judge_code_advisory(
             json.dump({"timestamp": ts, "verdict": verdict.model_dump()}, f, indent=2)
 
     return verdict
+
+
+# ---------------------------------------------------------------------------
+# Phase B5: PRM-style judge (per-adjustment scoring)
+# ---------------------------------------------------------------------------
+
+PRM_JUDGE_SYSTEM_PROMPT = """\
+You are reviewing another AI's proposal for synthesis parameter changes,
+scoring EACH ADJUSTMENT INDEPENDENTLY rather than the proposal as a whole.
+
+For each adjustment in the proposal:
+1. Decide whether THAT SPECIFIC adjustment should be applied (accept=true/false).
+2. Verify the cited run_id and metric values match the actual run history
+   (citation_verified=true if accurate, false if hallucinated).
+3. Give a brief reasoning for the per-step decision.
+
+This step-by-step scoring lets the loop apply the GOOD parts of a proposal
+and reject the BAD parts -- unlike a single yes/no verdict that throws away
+the whole proposal when only one adjustment is wrong.
+
+Return a verdict scoring every adjustment listed in the proposal context.
+"""
+
+
+_PRM_JUDGE_TOOL_SCHEMA = {
+    "name": "prm_judge_verdict",
+    "description": "Score each adjustment in the proposal independently.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "scores": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "param_name": {"type": "string"},
+                        "accept": {"type": "boolean"},
+                        "reasoning": {"type": "string"},
+                        "citation_verified": {"type": "boolean"},
+                    },
+                    "required": ["param_name", "accept", "reasoning", "citation_verified"],
+                },
+            },
+            "overall_reasoning": {"type": "string"},
+            "overall_confidence": {"type": "number"},
+        },
+        "required": ["scores", "overall_reasoning", "overall_confidence"],
+    },
+}
+
+
+def _prm_judge_via_anthropic(
+    context: str,
+    settings: LLMSettings,
+) -> PRMJudgeVerdict:
+    import anthropic
+
+    client = anthropic.Anthropic()
+
+    last_error = None
+    for attempt in range(1, settings.max_retries + 1):
+        try:
+            response = client.messages.create(
+                model=settings.model_name,
+                max_tokens=2048,
+                system=_build_system_blocks(PRM_JUDGE_SYSTEM_PROMPT),
+                messages=[{"role": "user", "content": context}],
+                tools=[_PRM_JUDGE_TOOL_SCHEMA],
+                tool_choice={"type": "tool", "name": "prm_judge_verdict"},
+            )
+
+            tool_block = None
+            for block in response.content:
+                if block.type == "tool_use":
+                    tool_block = block
+                    break
+
+            if tool_block is None:
+                raise ValueError("No tool_use block in Anthropic response")
+
+            return PRMJudgeVerdict.model_validate(tool_block.input)
+
+        except Exception as e:
+            last_error = e
+            if attempt < settings.max_retries:
+                continue
+
+    raise RuntimeError(
+        f"Anthropic PRM judge failed after {settings.max_retries} attempts: {last_error}"
+    )
+
+
+def _prm_judge_via_langchain(
+    context: str,
+    settings: LLMSettings,
+) -> PRMJudgeVerdict:
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    llm = get_llm(settings)
+    structured_llm = llm.with_structured_output(PRMJudgeVerdict)
+
+    messages = [
+        SystemMessage(content=PRM_JUDGE_SYSTEM_PROMPT),
+        HumanMessage(content=context),
+    ]
+
+    last_error = None
+    for attempt in range(1, settings.max_retries + 1):
+        try:
+            return structured_llm.invoke(messages)
+        except Exception as e:
+            last_error = e
+            if attempt < settings.max_retries:
+                continue
+
+    raise RuntimeError(
+        f"LangChain PRM judge failed after {settings.max_retries} attempts: {last_error}"
+    )
+
+
+@observe(name="prm_judge_proposal")
+def prm_judge_proposal(
+    proposal: SynthParamProposal,
+    policy: Dict[str, Any],
+    state: Dict[str, Any],
+    result: ValidationResult,
+    current_params: SynthesisParams,
+    settings: LLMSettings,
+) -> PRMJudgeVerdict:
+    """PRM-style judge: score each adjustment independently.
+
+    Unlike judge_proposal (binary yes/no on the whole proposal), this returns
+    a per-adjustment score so the loop can apply partial proposals --
+    keeping good adjustments and dropping bad ones.
+
+    Uses a different provider than the advisor when possible (same logic
+    as the standard judge).
+    """
+    judge_settings = get_judge_settings(settings)
+
+    context = _format_judge_context(
+        proposal, policy, state, result, current_params
+    )
+
+    if judge_settings.sdk_mode == "anthropic":
+        verdict = _prm_judge_via_anthropic(context, judge_settings)
+    else:
+        verdict = _prm_judge_via_langchain(context, judge_settings)
+
+    if settings.log_llm_io:
+        os.makedirs(settings.log_dir, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        path = os.path.join(settings.log_dir, f"prm_judge_{ts}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({
+                "timestamp": ts,
+                "verdict": verdict.model_dump(),
+            }, f, indent=2)
+
+    return verdict
+
+
+def apply_prm_verdict(
+    proposal: SynthParamProposal,
+    verdict: PRMJudgeVerdict,
+) -> SynthParamProposal:
+    """Build a new SynthParamProposal containing only the accepted adjustments.
+
+    Used by the loop when PRM mode is enabled: instead of rejecting a whole
+    proposal on any disagreement, apply only the per-step-accepted adjustments.
+    """
+    accepted_names = set(verdict.accepted_param_names())
+    filtered = [a for a in proposal.adjustments if a.param_name in accepted_names]
+
+    return SynthParamProposal(
+        adjustments=filtered,
+        overall_reasoning=(
+            f"Filtered by PRM judge: kept {len(filtered)}/{len(proposal.adjustments)} "
+            f"adjustments. Original reasoning: {proposal.overall_reasoning}"
+        ),
+        confidence=min(proposal.confidence, verdict.overall_confidence),
+        cited_runs=proposal.cited_runs,
+    )

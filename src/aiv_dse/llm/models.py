@@ -145,6 +145,69 @@ class JudgeVerdict(BaseModel):
         description="Judge confidence in this verdict (0.0-1.0)")
 
 
+# ---------------------------------------------------------------------------
+# Phase B5: PRM-style judge models (per-adjustment scoring)
+# ---------------------------------------------------------------------------
+
+class AdjustmentScore(BaseModel):
+    """Per-adjustment judge score for PRM-style step-by-step evaluation."""
+    model_config = {"extra": "forbid"}
+
+    param_name: str = Field(description="The parameter being scored")
+    accept: bool = Field(description="Should this individual adjustment be applied?")
+    reasoning: str = Field(
+        description="Why accept or reject — cite specific evidence")
+    citation_verified: bool = Field(
+        default=True,
+        description="Whether the cited run_id and metric values match the actual history")
+
+
+class PRMJudgeVerdict(BaseModel):
+    """PRM-style judge verdict scoring each adjustment independently.
+
+    Unlike JudgeVerdict (which is binary agree/disagree on the full proposal),
+    PRMJudgeVerdict scores each adjustment separately, enabling partial
+    proposal acceptance. Catches "right conclusion, wrong reasoning" bugs
+    that a single-verdict judge misses.
+    """
+    model_config = {"extra": "forbid"}
+
+    scores: List[AdjustmentScore] = Field(
+        description="Score for each adjustment in the original proposal")
+    overall_reasoning: str = Field(
+        description="Overall judgment narrative tying the per-step scores together")
+    overall_confidence: float = Field(
+        ge=0.0, le=1.0,
+        description="Calibrated confidence in the per-step assessment")
+
+    def accepted_param_names(self) -> List[str]:
+        """Names of parameters whose adjustments were accepted."""
+        return [s.param_name for s in self.scores if s.accept]
+
+    def all_accepted(self) -> bool:
+        """True if every adjustment was accepted."""
+        return all(s.accept for s in self.scores)
+
+    def any_accepted(self) -> bool:
+        """True if at least one adjustment was accepted."""
+        return any(s.accept for s in self.scores)
+
+
+class LessonLearned(BaseModel):
+    """A single rejection lesson recorded for Reflexion-style self-improvement.
+
+    Written when the judge rejects a proposal. Read by the advisor on
+    subsequent iterations to avoid repeating the same mistake.
+    """
+    model_config = {"extra": "forbid"}
+
+    iteration: int = Field(description="Iteration where the rejection occurred")
+    proposed_change: str = Field(
+        description="Compact summary of what was proposed (e.g. 'unroll 4→16')")
+    rejection_reason: str = Field(
+        description="Why the judge rejected it")
+
+
 class SpecConstraint(BaseModel):
     """A single constraint derived from an IP specification."""
     model_config = {"extra": "forbid"}

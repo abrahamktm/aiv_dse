@@ -1,0 +1,19 @@
+Design: FIR Filter (32-tap, symmetric, low-pass)
+Target throughput: 1 sample per clock cycle (II=1)
+Clock: 200 MHz (5 ns period)
+Memory: Coefficient ROM (32 entries x 16-bit) + tap delay line (32 entries x 16-bit)
+Interface: AXI-Stream, 16-bit data width, ready/valid handshake
+Compute: 32 MAC operations per sample, fixed-point sc_fixed<16,8>
+Critical path: Final MAC accumulation chain
+
+Constraints from system integration:
+  - Total latency must not exceed 5 us (5000 ns)
+  - Area budget: 30000 LUTs (smaller IP, fits a corner block)
+  - Power budget: 200 mW (low-power mode, battery-constrained)
+
+Notes:
+  - Coefficient array must be cyclic-partitioned (factor >= 4) for II=1
+  - Tap delay line should be partitioned matching MAC unroll factor
+  - resource_sharing breaks parallel MACs -- avoid
+  - DPO_AUTO_ALL is safe here -- mostly multiply-add datapath
+  - bitwidth_reduce is highly recommended -- coefficients fit in 12 bits

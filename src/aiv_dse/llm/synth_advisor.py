@@ -103,6 +103,19 @@ def _format_synth_context(
                 f"({pct_over:.0f}% over, {v['severity']})"
             )
 
+    # Reflexion: lessons from past judge rejections
+    # The advisor reads these so it doesn't repeat the same mistakes that
+    # the judge previously rejected.
+    lessons = state.get("lessons_learned", [])
+    if lessons:
+        sections.append("")
+        sections.append("## Lessons from past rejections (avoid repeating these)")
+        for l in lessons:
+            sections.append(
+                f"- iter {l['iteration']}: proposed '{l['proposed_change']}' "
+                f"-- rejected because: {l['rejection_reason']}"
+            )
+
     # Domain knowledge (Phase 5 RAG)
     if knowledge_chunks:
         sections.append("")
@@ -199,7 +212,12 @@ def _propose_via_anthropic(
             response = client.messages.create(
                 model=settings.model_name,
                 max_tokens=1024,
-                system=SYSTEM_PROMPT,
+                # Prompt caching: ~90% input-cost reduction on repeats
+                system=[{
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }],
                 messages=[{"role": "user", "content": context}],
                 tools=[_SYNTH_TOOL_SCHEMA],
                 tool_choice={"type": "tool", "name": "propose_synth_params"},

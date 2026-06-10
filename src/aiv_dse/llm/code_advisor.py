@@ -245,7 +245,12 @@ def _advise_via_anthropic(
             response = client.messages.create(
                 model=settings.model_name,
                 max_tokens=2048,
-                system=SYSTEM_PROMPT,
+                # Prompt caching: ~90% input-cost reduction on repeats
+                system=[{
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }],
                 messages=[{"role": "user", "content": context}],
                 tools=[_CODE_TOOL_SCHEMA],
                 tool_choice={"type": "tool", "name": "advise_code_changes"},

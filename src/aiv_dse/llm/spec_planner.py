@@ -152,7 +152,12 @@ def _plan_via_anthropic(
             response = client.messages.create(
                 model=settings.model_name,
                 max_tokens=2048,
-                system=SPEC_SYSTEM_PROMPT,
+                # Prompt caching: ~90% input-cost reduction on repeats
+                system=[{
+                    "type": "text",
+                    "text": SPEC_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }],
                 messages=[
                     {"role": "user", "content": f"## IP Specification\n\n{spec_text}"},
                 ],

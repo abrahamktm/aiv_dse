@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
@@ -62,6 +63,9 @@ class DSEState(BaseModel):
 
     # History and tracking
     history: List[Dict[str, Any]] = Field(default_factory=list, description="Rolling window history (max 3)")
+    lessons_learned: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Reflexion: judge-rejection lessons read by advisor next iteration")
     iteration: int = Field(default=0)
     max_iterations: int = Field(default=10)
 
@@ -295,27 +299,73 @@ def propose(state: DSEState) -> Dict[str, Any]:
                 if settings.model_name == "gpt-4o-mini":
                     settings.model_name = "claude-sonnet-4-20250514"
 
-            history_state = {"history": state.history}
+            # Reflexion: pass past judge rejections so the advisor can learn from them
+            history_state = {
+                "history": state.history,
+                "lessons_learned": state.lessons_learned,
+            }
             llm_proposal = propose_synth_params(
                 ctx.policy, history_state, result, params, settings, None
             )
 
             # Judge (if enabled)
+            new_lessons = list(state.lessons_learned)
             if state.use_judge and llm_proposal:
-                from aiv_dse.llm.judge import judge_proposal
-                verdict = judge_proposal(
-                    llm_proposal, ctx.policy, history_state, result, params, settings
-                )
-                if not verdict.agree:
-                    # Fall back to Bayesian
-                    llm_proposal = None
+                # PRM-style judge (opt-in via env var) scores adjustments individually
+                if os.getenv("AIVDSE_USE_PRM_JUDGE", "0") == "1":
+                    from aiv_dse.llm.judge import prm_judge_proposal, apply_prm_verdict
+                    prm_verdict = prm_judge_proposal(
+                        llm_proposal, ctx.policy, history_state, result, params, settings
+                    )
+                    if prm_verdict.any_accepted():
+                        llm_proposal = apply_prm_verdict(llm_proposal, prm_verdict)
+                        for s in prm_verdict.scores:
+                            if not s.accept:
+                                new_lessons.append({
+                                    "iteration": state.iteration,
+                                    "proposed_change": f"{s.param_name} change",
+                                    "rejection_reason": s.reasoning,
+                                })
+                    else:
+                        new_lessons.append({
+                            "iteration": state.iteration,
+                            "proposed_change": f"multi-param: {','.join(llm_proposal.cited_runs)}",
+                            "rejection_reason": prm_verdict.overall_reasoning,
+                        })
+                        llm_proposal = None
+                else:
+                    from aiv_dse.llm.judge import judge_proposal
+                    verdict = judge_proposal(
+                        llm_proposal, ctx.policy, history_state, result, params, settings
+                    )
+                    if not verdict.agree:
+                        # Reflexion: record the rejection for next iteration
+                        change_summary = ", ".join(
+                            f"{a.param_name} {a.current_value}->{a.proposed_value}"
+                            for a in llm_proposal.adjustments[:3]
+                        )
+                        new_lessons.append({
+                            "iteration": state.iteration,
+                            "proposed_change": change_summary,
+                            "rejection_reason": "; ".join(verdict.disagreements) or verdict.alternative_suggestion,
+                        })
+                        # Fall back to Bayesian
+                        llm_proposal = None
+            # Cap lessons to last MAX_LESSONS
+            from aiv_dse.core.state import MAX_LESSONS
+            if len(new_lessons) > MAX_LESSONS:
+                new_lessons = new_lessons[-MAX_LESSONS:]
         except Exception:
             llm_proposal = None
+            new_lessons = list(state.lessons_learned)
+    else:
+        new_lessons = list(state.lessons_learned)
 
     return {
         "shadow_proposal": shadow.model_dump(),
         "bayesian_proposal": bayesian.model_dump(),
         "llm_proposal": llm_proposal.model_dump() if llm_proposal else None,
+        "lessons_learned": new_lessons,
     }
 
 

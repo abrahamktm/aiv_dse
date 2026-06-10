@@ -339,17 +339,60 @@ def run_loop(
 
                 # 10. Judge (if enabled)
                 if use_judge:
-                    from aiv_dse.llm.judge import judge_proposal
-                    verdict = judge_proposal(
-                        llm_proposal, policy, state, result, params, settings
-                    )
-                    if verdict.agree:
-                        print(f"  Judge: AGREE (conf={verdict.confidence:.2f})")
+                    # PRM-style judge (opt-in via env var) scores each adjustment
+                    # independently and applies only the accepted ones.
+                    if os.getenv("AIVDSE_USE_PRM_JUDGE", "0") == "1":
+                        from aiv_dse.llm.judge import prm_judge_proposal, apply_prm_verdict
+                        prm_verdict = prm_judge_proposal(
+                            llm_proposal, policy, state, result, params, settings
+                        )
+                        if prm_verdict.all_accepted():
+                            print(f"  PRM Judge: ALL ACCEPTED (conf={prm_verdict.overall_confidence:.2f})")
+                        elif prm_verdict.any_accepted():
+                            llm_proposal = apply_prm_verdict(llm_proposal, prm_verdict)
+                            print(f"  PRM Judge: PARTIAL ACCEPT -- kept {len(llm_proposal.adjustments)} adjustments")
+                            # Record per-adjustment rejections for Reflexion
+                            from aiv_dse.core.state import append_lesson
+                            for s in prm_verdict.scores:
+                                if not s.accept:
+                                    append_lesson(
+                                        state, iteration,
+                                        f"{s.param_name} change",
+                                        s.reasoning,
+                                    )
+                        else:
+                            print(f"  PRM Judge: ALL REJECTED -- falling back to Bayesian")
+                            from aiv_dse.core.state import append_lesson
+                            append_lesson(
+                                state, iteration,
+                                f"multi-param proposal cited={','.join(llm_proposal.cited_runs)}",
+                                prm_verdict.overall_reasoning,
+                            )
+                            llm_proposal = None
                     else:
-                        print(f"  Judge: DISAGREE -- {'; '.join(verdict.disagreements)}")
-                        # On disagreement, fall back to Bayesian
-                        print(f"  Escalating: using Bayesian proposal instead.")
-                        llm_proposal = None
+                        from aiv_dse.llm.judge import judge_proposal
+                        verdict = judge_proposal(
+                            llm_proposal, policy, state, result, params, settings
+                        )
+                        if verdict.agree:
+                            print(f"  Judge: AGREE (conf={verdict.confidence:.2f})")
+                        else:
+                            print(f"  Judge: DISAGREE -- {'; '.join(verdict.disagreements)}")
+                            # Record lesson for Reflexion -- next iteration's advisor
+                            # will read this and avoid the same mistake.
+                            from aiv_dse.core.state import append_lesson
+                            change_summary = ", ".join(
+                                f"{a.param_name} {a.current_value}->{a.proposed_value}"
+                                for a in llm_proposal.adjustments[:3]
+                            )
+                            append_lesson(
+                                state, iteration,
+                                change_summary,
+                                "; ".join(verdict.disagreements) or verdict.alternative_suggestion,
+                            )
+                            # On disagreement, fall back to Bayesian
+                            print(f"  Escalating: using Bayesian proposal instead.")
+                            llm_proposal = None
 
             except Exception as e:
                 print(f"  LLM error: {e}")

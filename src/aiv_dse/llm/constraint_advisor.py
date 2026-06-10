@@ -191,7 +191,13 @@ def _propose_via_anthropic(
             response = client.messages.create(
                 model=settings.model_name,
                 max_tokens=1024,
-                system=SYSTEM_PROMPT,
+                # Prompt caching: system prompt cached for ~90% input-cost
+                # reduction on repeated calls within the cache TTL.
+                system=[{
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }],
                 messages=[
                     {"role": "user", "content": context},
                 ],

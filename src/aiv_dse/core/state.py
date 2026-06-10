@@ -6,14 +6,18 @@ from typing import Any, Dict, List, Optional
 from aiv_dse.core.validator import ValidationResult
 
 MAX_HISTORY = 3
+MAX_LESSONS = 10
 METRIC_FIELDS = ["latency_ns", "area_units", "power_mw"]
 
 
 def load_state(path: str) -> Dict[str, Any]:
     if not os.path.exists(path):
-        return {"history": []}
+        return {"history": [], "lessons_learned": []}
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        state = json.load(f)
+    # Backward compat: older state files lack lessons_learned
+    state.setdefault("lessons_learned", [])
+    return state
 
 
 def save_state(path: str, state: Dict[str, Any]) -> None:
@@ -64,6 +68,30 @@ def compute_deltas(state: Dict[str, Any]) -> Optional[Dict[str, float]]:
             deltas[field] = None
 
     return deltas
+
+
+def append_lesson(
+    state: Dict[str, Any],
+    iteration: int,
+    proposed_change: str,
+    rejection_reason: str,
+) -> Dict[str, Any]:
+    """Append a Reflexion-style lesson when the judge rejects a proposal.
+
+    Stored in state["lessons_learned"]. Capped at MAX_LESSONS to keep prompts
+    bounded. Subsequent advisor calls read these so the advisor learns
+    from past judge rejections instead of repeating the same mistake.
+    """
+    lessons = state.get("lessons_learned", [])
+    lessons.append({
+        "iteration": iteration,
+        "proposed_change": proposed_change,
+        "rejection_reason": rejection_reason,
+    })
+    if len(lessons) > MAX_LESSONS:
+        lessons = lessons[-MAX_LESSONS:]
+    state["lessons_learned"] = lessons
+    return state
 
 
 def history_summary(state: Dict[str, Any]) -> str:
