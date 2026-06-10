@@ -1,0 +1,24 @@
+# HLS Area Report (synthetic sample)
+# Target Technology: 28nm CMOS
+
+=== Resource Utilization ===
+Component              Count      Percentage
+----------------------------------------------
+LUTs                   42000      15.2%
+Flip-Flops            18500      6.7%
+BRAM Blocks           8          2.1%
+DSP Slices            12         4.5%
+Total Area Units      42000
+
+=== Module Breakdown ===
+fir_filter_top        42000 (100.0%)
+  u_input             2100 (5.0%)
+  u_mac               35700 (85.0%)
+    mult_array         28000 (66.7%)
+    acc_chain          7700 (18.3%)
+  u_output            4200 (10.0%)
+
+=== Memory Analysis ===
+BRAM Usage            : 8 blocks (32KB total)
+Distributed RAM       : 2400 LUTs
+Register File         : 1200 FFs

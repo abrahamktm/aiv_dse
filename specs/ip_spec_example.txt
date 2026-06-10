@@ -1,0 +1,18 @@
+Design: FFT-256 Accelerator
+Target throughput: 1 sample per 10 clock cycles
+Clock: 100 MHz (10 ns period)
+Memory: Dual-port BRAM, 256 entries x 32-bit
+Interface: AXI-Stream, 32-bit data width
+Compute: 8-stage butterfly, radix-2
+Critical path: Butterfly multiply-accumulate
+
+Constraints from system integration:
+  - Total latency must not exceed 10 us (10000 ns)
+  - Area budget: 50000 LUTs (shared die with other IPs)
+  - Power budget: 500 mW (thermal envelope)
+
+Notes:
+  - Unroll > 8 saturates BRAM read ports on this architecture
+  - Pipeline depth > 4 gives diminishing returns due to butterfly dependency
+  - Array partitioning beyond 4 increases routing congestion significantly
+  - Clock period below 5 ns may not meet timing closure on target FPGA

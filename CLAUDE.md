@@ -1,0 +1,207 @@
+# AIV-DSE -- Claude Code Context
+
+Project: Agentic Design Space Exploration for HLS tools.
+Sister project to AIV-DE (one-shot governance) -- this one does iterative exploration.
+
+This is AIV-DSE, an agentic HLS design space exploration framework.
+See PROJECT_BRIEF.md for the full vision and architecture.
+See AIV_DSE_Implementation_Guide.md for the 7-priority upgrade plan.
+
+## Current priorities (in order)
+1. ~~Migrate while loop to LangGraph (src/aiv_dse/graph.py)~~ **DONE**
+2. ~~Add Gradio UI (app.py)~~ **DONE** (deploy to HF Spaces when ready)
+3. Build MCP server (src/aiv_dse/mcp_server.py)
+4. ~~Add Langfuse tracing (src/aiv_dse/tracing.py)~~ **DONE**
+5. Replace TF-IDF with ChromaDB RAG (src/aiv_dse/rag.py)
+6. Screenshot LLM-as-judge trace for README
+7. Build golden dataset + RAGAS evaluation
+
+
+## Current State: Phase 7 (LangGraph) Complete
+
+**191 tests passing.** Run: `$env:PYTHONPATH='src'; python -m pytest tests/ -v`
+
+### Completed Phases
+
+- **Stage 0**: Project scaffold (pyproject.toml, src layout, .env.example)
+- **Stage 1**: Deterministic validation (report_parser, validator, state tracking)
+- **Stage 2**: LLM constraint advisor + HITL + EDR writer (dual SDK: LangChain + Anthropic)
+- **Stage 3**: Closed-loop with 3 strategies (shadow heuristic, Bayesian/Optuna TPE, LLM + judge + spec planner)
+- **Phase 4**: Full HLS directive set (7 new SynthesisParams knobs), .rpt parsing, TCL config writer, CSV logger, extended DummyHLS physics
+- **Phase 5**: SystemC code-aware advisor (regex static analysis, RAG knowledge retriever with TF-IDF, code suggestions)
+- **Phase 6**: Multi-objective Pareto front (NSGA-II sampler, Pareto dominance tracking, frontier convergence, weight-based selection)
+
+---
+
+## File Map
+
+```
+src/aiv_dse/
+  adapters/
+    base.py              # ABC: HLSAdapter (run_synthesis, name)
+    dummy_hls.py         # Simulated HLS with physics model (all 11 knobs)
+    hls_tool.py          # Real HLS tool adapter (write TCL -> run -> parse reports)
+    report_parser.py     # Stage 1 JSON report parser
+    rpt_parser.py        # Phase 4: HLS .rpt file parsers (timing, area, power, synth.log)
+    tcl_writer.py        # Phase 4: TCL config generator (project.tt2.tcl, block.config, block.procs.tcl)
+  core/
+    validator.py         # Policy-as-code: validate(report, policy) -> ValidationResult
+    state.py             # Rolling window state (MAX_HISTORY=3, deltas)
+    stagnation.py        # Stagnation detection across runs
+    shadow_heuristic.py  # Deterministic benchmark strategy (adjust unroll by 1)
+    bayesian_advisor.py  # Optuna TPE/GP/NSGA-II optimizer (11-dim search space, single/multi-objective)
+    convergence.py       # Weighted scoring + convergence detection + Pareto convergence
+    pareto.py            # Phase 6: Pareto dominance, front computation, ParetoTracker
+    history.py           # Full history (never trimmed), combo tracking
+    csv_logger.py        # Phase 4: Append-only CSV run logger
+  llm/
+    config.py            # LLMSettings, get_llm(), get_anthropic_client()
+    models.py            # Pydantic models (SynthesisParams, SynthParamProposal, JudgeVerdict, SpecPlan, etc.)
+    prompt_formatter.py  # format_context() for LLM prompts
+    constraint_advisor.py # Stage 2: LLM proposes constraint threshold changes
+    synth_advisor.py     # Stage 3: LLM proposes synthesis param changes
+    judge.py             # LLM-as-judge cross-check (ALL LLM output goes through judge)
+    spec_planner.py      # IP spec reader (txt/pdf) -> SpecPlan
+  workflow/
+    hitl.py              # Human-in-the-loop review
+    edr_writer.py        # Engineering Decision Record writer
+  tracing.py             # Langfuse observability (@observe decorator, trace helpers)
+  run_stage1.py          # CLI for Stage 1
+  run_stage2.py          # CLI for Stage 2
+  run_loop.py            # CLI for Stage 3+ closed loop (--backend loop|graph)
+  graph.py               # LangGraph state machine (Phase 10)
+
+policy/default_policy.yaml   # latency<=10000, area<=50000, power<=500, unroll<=16
+samples/                     # report_pass.json, report_fail.json, poison_report.json
+samples/rpt/                 # Synthetic HLS timing.rpt, area.rpt, power.rpt, synth.log
+specs/ip_spec_example.txt    # Sample FFT-256 spec
+
+tests/                       # 139 tests, all mocked, no API keys needed
+```
+
+---
+
+## Key Design Decisions
+
+1. **SynthesisParams** (11 knobs): unroll_factor, pipeline_depth, clock_period_ns, array_partition_factor, clock_slack_ns, dpo_mode, flatten, inline, loop_merge, bitwidth_reduce, resource_sharing
+2. **Policy** (SPEC) stays fixed; SynthesisParams (KNOBS) are what the loop tunes
+3. **Shadow heuristic** is a benchmark (not fallback) -- proves LLM adds value by comparing convergence
+4. **LLM-as-judge** evaluates ALL LLM output (advisor + spec planner), not just some
+5. **Dual SDK**: Every LLM call has both LangChain and direct Anthropic SDK paths
+6. **Pydantic `extra="forbid"`** on all LLM-facing models
+7. **Bayesian advisor** uses `last_proposed_params` (full SynthesisParams) instead of float-encoded adjustments to preserve categorical/boolean types
+8. **Multi-objective is default** (`multi_objective=True`). Uses NSGA-II sampler, Pareto front tracking with deduplication, and frontier convergence (front size stable for 3 updates). Disable with `--no-multi-objective`
+
+---
+
+## DummyHLS Physics Model
+
+Sweet spot for default policy: `unroll=2, pipeline=2` -> latency~8165, area~39000, power~212 -> APPROVED
+
+Phase 4 multipliers:
+- `clock_slack`: latency *= (1 - slack*0.01), area *= (1 + slack*0.02)
+- `DPO_AUTO_ALL`: 0.80x area/power, `DPO_AUTO_OPT`: 0.88x, `DPO_AUTO_EXPR`: 0.95x
+- `flatten`: 0.95x latency, 1.15x area
+- `inline`: 0.93x latency, 1.12x area
+- `loop_merge`: 0.90x latency
+- `bitwidth_reduce`: 0.85x area, 0.88x power
+- `resource_sharing`: 0.75x area, 1.05x power
+
+---
+
+## Next Phases (Roadmap)
+
+### Phase 7: Batch/Parallel Exploration
+- Run N synthesis jobs in parallel (thread pool or subprocess pool)
+- Bayesian batch acquisition (q-EI, q-UCB)
+- Progress dashboard
+
+### Phase 8: Real HLS Tool CI/CD Integration
+- GitHub Actions / Jenkins pipeline integration
+- Automatic nightly DSE runs
+- Regression detection (alert if metrics regress from baseline)
+
+### Phase 9: Transfer Learning Across IPs
+- Train a meta-model on CSV logs from multiple IPs
+- Warm-start Bayesian optimizer for new IPs using prior knowledge
+- IP similarity scoring
+
+### Phase 10: LangGraph Migration ✅ COMPLETE
+- Replaced `while` loop with LangGraph state machine (`src/aiv_dse/graph.py`)
+- Conditional edges: check_terminal -> propose or END
+- Cyclic graph: synthesize -> validate -> record -> check_terminal -> propose -> apply -> synthesize
+- CLI: `python -m aiv_dse.graph --strategy bayesian --max-iters 10`
+- Backend switch: `python -m aiv_dse.run_loop --backend graph` or `--backend loop`
+- 24 new tests in `tests/test_graph.py`
+
+### Phase 11: Dashboard / Web UI
+- Streamlit or Gradio dashboard
+- Real-time convergence plots
+- Interactive constraint tuning
+- Pareto front explorer
+
+### Phase 12: Workflow Documentation & Diagrams
+- Mermaid orchestration diagram in README (renders in GitHub/Confluence/VS Code)
+- ASCII sequence diagram in CLAUDE.md for developer onboarding
+- Per-iteration message flow diagram (strategy → judge → adapt cycle)
+- `--explain` CLI flag: prints each step without executing
+
+### Phase 13: Automatic Constraint Regression
+- Detect unreachable constraints (N consecutive VETOs on same constraint)
+- Auto-relax threshold by configurable % and retry
+- Report feasible constraint values based on observed Pareto front
+- User notification: "area constraint unreachable, closest was X vs target Y"
+- `--auto-relax` CLI flag with `--relax-step-pct` and `--max-relax-iters`
+- Compress `_format_synth_context` history to 1-line-per-entry summaries (~40 tokens vs ~180)
+
+### Phase 14: Production Hardening
+- Retry logic for LLM calls (exponential backoff)
+- Token budget tracking
+- Rate limiting
+- Structured logging (JSON) + OpenTelemetry traces
+
+---
+
+## Quick Commands
+
+```powershell
+cd aiv_dse
+$env:PYTHONPATH='src'
+
+# Run all tests
+python -m pytest tests/ -v
+
+# Demo: LangGraph backend (recommended)
+python -m aiv_dse.run_loop --backend graph --strategy bayesian --max-iters 10 --seed 42
+
+# Demo: legacy while-loop backend
+python -m aiv_dse.run_loop --backend loop --strategy shadow --max-iters 10
+
+# Demo: direct LangGraph entry point
+python -m aiv_dse.graph --strategy bayesian --dpo DPO_AUTO_ALL --flatten --max-iters 10 --seed 42
+
+# Demo: single-objective mode (legacy)
+python -m aiv_dse.run_loop --strategy bayesian --no-multi-objective --max-iters 5 --seed 42
+
+# Demo: LLM (needs .env with ANTHROPIC_API_KEY)
+python -m aiv_dse.run_loop --strategy llm --sdk anthropic --max-iters 5
+
+# Demo: with Langfuse tracing (needs LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY)
+$env:AIVDSE_USE_LANGFUSE='1'; python -m aiv_dse.run_loop --strategy llm --max-iters 5
+```
+
+---
+
+## Dependencies
+
+```
+pyyaml, pytest, langchain>=0.3, langchain-openai>=0.2, langchain-anthropic>=0.3,
+anthropic>=0.39, pydantic>=2.0, python-dotenv, optuna>=3.0, pdfplumber>=0.10,
+langfuse>=2.0 (optional: for tracing)
+```
+
+## Rules
+- Never break existing tests
+- Keep backward compatibility (legacy run_loop.py still works)
+- All new features must be opt-in via env vars or CLI flags
+- All data is synthetic (no proprietary IP)

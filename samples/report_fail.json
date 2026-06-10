@@ -1,0 +1,8 @@
+{
+  "run_id": "RUN-002",
+  "latency_ns": 15000,
+  "area_units": 62000,
+  "power_mw": 620,
+  "unroll_factor": 32,
+  "notes": "Aggressive unroll blew area and power budget"
+}

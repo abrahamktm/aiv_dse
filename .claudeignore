@@ -1,0 +1,12 @@
+.env
+**/.env
+**/*key*
+**/*token*
+**/secrets/**
+**/.git/**
+**/.venv/**
+**/node_modules/**
+**/out/**
+**/*.log
+**/*.rpt
+**/*.csv

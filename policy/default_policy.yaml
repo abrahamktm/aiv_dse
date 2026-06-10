@@ -1,0 +1,35 @@
+# Default policy for AIV-DSE validation.
+# The validator iterates the constraints list generically --
+# adding a new constraint is one YAML entry, zero code changes.
+
+constraints:
+  - id: latency
+    field: latency_ns
+    max: 10000
+    severity: CRITICAL
+    on_violation: VETO
+
+  - id: area
+    field: area_units
+    max: 50000
+    severity: WARNING
+    on_violation: ESCALATE
+
+  - id: power
+    field: power_mw
+    max: 500
+    severity: CRITICAL
+    on_violation: VETO
+
+  - id: unroll_factor
+    field: unroll_factor
+    max: 16
+    severity: WARNING
+    on_violation: ESCALATE
+
+governance:
+  on_critical_violation: HALT
+  on_warning_violation: ESCALATE
+  on_poison_detected: HALT
+  max_actions_per_iter: 5
+  max_iters: 20

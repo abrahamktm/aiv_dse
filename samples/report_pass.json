@@ -1,0 +1,8 @@
+{
+  "run_id": "RUN-001",
+  "latency_ns": 8500,
+  "area_units": 42000,
+  "power_mw": 350,
+  "unroll_factor": 4,
+  "notes": "Baseline with conservative unroll"
+}

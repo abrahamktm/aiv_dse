@@ -1,0 +1,31 @@
+# Secrets
+.env
+!.env.example
+*.key
+*.pem
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# Outputs / Logs
+out/
+*.sqlite
+*.db
+*.log
+
+# Knowledge cache (auto-generated, can be rebuilt)
+knowledge/.cache/
+
+# Claude Code project settings (contains local paths)
+.claude/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+NUL

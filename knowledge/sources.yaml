@@ -1,0 +1,21 @@
+# Knowledge source configuration for AIV-DSE RAG retriever.
+# Local files in this directory (.md, .txt, .pdf) are always included.
+# This file configures additional remote sources and settings.
+
+confluence:
+  # List Confluence page URLs to fetch at index-build time.
+  # Each entry can be a simple URL string or a dict with url + label.
+  #
+  # Example:
+  #   pages:
+  #     - url: https://your-company.atlassian.net/wiki/spaces/HLS/pages/12345
+  #       label: "HLS Tips and Tricks"
+  #     - url: https://your-company.atlassian.net/wiki/spaces/HLS/pages/67890
+  #       label: "HLS Best Practices"
+  #
+  pages: []
+
+settings:
+  chunk_max_tokens: 400        # Max tokens per chunk (smaller = more precise retrieval)
+  cache_ttl_days: 30           # Rebuild cache after N days of staleness
+  summarize_by_default: false  # Set true to always compress chunks via LLM

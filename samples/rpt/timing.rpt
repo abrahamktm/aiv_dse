@@ -1,0 +1,22 @@
+# HLS Timing Report (synthetic sample)
+# Design: fir_filter_top
+# Date: 2026-01-29 10:23:45
+
+=== Clock Constraints ===
+Clock Name       : clk
+Target Period    : 10.000 ns (100.00 MHz)
+Actual Period    : 8.734 ns (114.50 MHz)
+Slack            : 1.266 ns
+Status           : MET
+
+=== Critical Path ===
+Start Point      : u_mac/acc_reg[31]/CK
+End Point        : u_output/data_out_reg[31]/D
+Path Delay       : 8.734 ns
+Logic Levels     : 12
+Latency (cycles) : 850
+
+=== Performance Summary ===
+Latency (ns)     : 8500.0
+Throughput       : 117647 samples/sec
+Initiation II    : 1

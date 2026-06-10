@@ -1,0 +1,21 @@
+# HLS Power Report (synthetic sample)
+# Operating Conditions: Typical, 1.0V, 25C
+
+=== Power Summary ===
+Total Power           : 350.0 mW
+Dynamic Power         : 280.0 mW (80.0%)
+Static Power          : 70.0 mW (20.0%)
+
+=== Dynamic Power Breakdown ===
+Logic Power           : 168.0 mW (60.0% of dynamic)
+Signal Power          : 56.0 mW (20.0% of dynamic)
+Memory Power          : 42.0 mW (15.0% of dynamic)
+Clock Power           : 14.0 mW (5.0% of dynamic)
+
+=== Power by Module ===
+fir_filter_top        350.0 mW (100.0%)
+  u_input             17.5 mW (5.0%)
+  u_mac               297.5 mW (85.0%)
+    mult_array         238.0 mW (68.0%)
+    acc_chain          59.5 mW (17.0%)
+  u_output            35.0 mW (10.0%)
