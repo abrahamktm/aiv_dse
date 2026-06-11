@@ -967,12 +967,19 @@ empirical benchmark script.
 | 21 | **Cost/token tracking** | 2 hr | Expected of production LLM apps — display in Gradio UI | 🔜 |
 | 22 | **Interactive Pareto visualisation in Gradio** | ½ day | Plotly 3D scatter; the matplotlib code already exists in `core/visualize.py` | 🔜 |
 
+### Persistence & resilience
+
+| # | Item | Effort | Notes | Status |
+|---|------|--------|-------|--------|
+| 23 | **Run checkpoint & resume (DIY JSON)** | 3–4 hr | Serialize full `DSEState` (iteration, history, lessons_learned, Pareto points, current params) to `out/checkpoint.json` after each iteration. `--resume` flag hydrates on startup. Stdlib only — no LangGraph checkpointer dep, works on both `loop` and `graph` backends. Solves the stop-day-1 / resume-day-2 case | 🔜 |
+| 24 | **Warm-start from past run history** | ½ day | Read past `out/*.csv` rows, filter to APPROVED, seed the Bayesian study via a small `HistorySeeder` protocol (`OptunaSeeder` now, `BoTorchSeeder` slot reserved). New `--warm-start-from out/runs.csv` flag. Cross-run / cross-IP optimizer-prior transfer — complementary to but distinct from #23 | 🔜 |
+
 ### Architecture refactors
 
 | # | Item | Effort | Notes | Status |
 |---|------|--------|-------|--------|
-| 23 | **Knob registry (YAML-driven)** | 1 day | Currently 11 knobs are hardcoded across 7 files. A registry collapses adding a knob to one YAML entry | 🔜 |
-| 24 | **Async / parallel synthesis runs** | 1 day | Phase 7 on the original roadmap. Optuna supports parallel evaluation | 🔜 |
+| 25 | **Knob registry (YAML-driven)** | 1 day | Currently 11 knobs are hardcoded across 7 files. A registry collapses adding a knob to one YAML entry | 🔜 |
+| 26 | **Async / parallel synthesis runs** | 1 day | Phase 7 on the original roadmap. Optuna supports parallel evaluation | 🔜 |
 
 ---
 

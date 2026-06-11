@@ -35,7 +35,7 @@ Run: `$env:PYTHONPATH='src'; python -m pytest tests/ -v`
 - **Phase 6**: Multi-objective Pareto front (NSGA-II sampler, Pareto dominance tracking, frontier convergence, weight-based selection)
 - **Phase 7**: LangGraph migration (`src/aiv_dse/graph.py`, cyclic state machine, `--backend graph|loop` CLI switch)
 - **Phase 8**: LLM-layer upgrades — Anthropic prompt caching on advisor calls, opt-in extended thinking on judge (`AIVDSE_JUDGE_THINKING=1`), cross-provider judge (Claude advisor + Gemini judge by default; OpenAI fallback), Reflexion (`lessons_learned` in state, capped at `MAX_LESSONS=10`), PRM-style judge (`AIVDSE_USE_PRM_JUDGE=1`, per-adjustment partial acceptance) — plus `scripts/benchmark.py`, GitHub Actions CI (`.github/workflows/test.yml`), 32-tap FIR sample
-- **Phase 16 partial**: `--explain` CLI flag shipped; Mermaid/ASCII orchestration diagrams still open
+- **Phase 18 partial**: `--explain` CLI flag shipped; Mermaid/ASCII orchestration diagrams still open
 - **Phase 13**: Automatic constraint regression (`src/aiv_dse/core/constraint_relaxer.py`, `--auto-relax / --relax-step-pct / --max-relax-iters` CLI flags)
 
 ---
@@ -133,52 +133,66 @@ Phase 4 multipliers:
 > the original "Phase 7 = batch/parallel" and "Phase 8 = HLS CI/CD" ideas live on
 > below at higher numbers, with their original details preserved.
 
-### Phase 9: MCP Server
+### Phase 9: Run Checkpoint & Resume (DIY JSON, no LangGraph dep)
+- Serialize the full `DSEState` (iteration, history, lessons_learned, ParetoTracker points, current SynthesisParams) to `out/checkpoint.json` after each iteration in the `record` node
+- `--resume` CLI flag hydrates `DSEState` from the file when present and continues from the saved iteration
+- Stdlib only (`json` + `Pydantic.model_dump()`); no `langgraph-checkpoint-sqlite` dep so it works on both `loop` and `graph` backends and survives any future LangGraph migration
+- Solves the stop-on-day-1 / resume-on-day-2 case in-run
+- ~3–4 hr including tests
+
+### Phase 10: Warm-Start from Run History
+- Read past `out/*.csv` rows at startup, filter to APPROVED runs, dedup, feed as prior trials into the Bayesian study
+- Optimizer-agnostic via a small `HistorySeeder` Protocol: ship `OptunaSeeder` (`study.add_trial(FixedTrial(params, values))`) now; `BoTorchSeeder` slot reserved for the eventual BoTorch migration
+- New CLI flag `--warm-start-from out/runs.csv` (or auto-discover when present)
+- Cross-run / cross-IP knowledge transfer at the optimizer-prior layer; complementary to but distinct from Phase 9's same-run resume
+- ~½ day including tests
+
+### Phase 11: MCP Server
 - Expose the DSE loop as MCP tools (`src/aiv_dse/mcp_server.py`)
 - Lets external agents drive synthesis runs / read state / inspect the Pareto front
 
-### Phase 10: ChromaDB RAG
+### Phase 12: ChromaDB RAG
 - Replace TF-IDF retriever (`knowledge_retriever.py`) with ChromaDB (`src/aiv_dse/rag.py`)
 - Vector embeddings for better recall on SystemC/HLS knowledge
 
-### Phase 11: Golden Dataset + RAGAS Evaluation
+### Phase 13: Golden Dataset + RAGAS Evaluation
 - Curated golden dataset of (IP, constraints, expected best-params) tuples
 - RAGAS-style metrics for retriever + advisor quality
 - Regression detection if eval scores drop
 
-### Phase 12: Batch/Parallel Exploration
+### Phase 14: Batch/Parallel Exploration
 - Run N synthesis jobs in parallel (thread pool or subprocess pool)
 - Bayesian batch acquisition (q-EI, q-UCB)
 - Progress dashboard
 
-### Phase 13: Real HLS Tool CI/CD Integration
+### Phase 15: Real HLS Tool CI/CD Integration
 - GitHub Actions / Jenkins pipeline integration for actual HLS runs (current CI only runs pytest)
 - Automatic nightly DSE runs
 - Regression detection (alert if metrics regress from baseline)
 
-### Phase 14: Transfer Learning Across IPs
-- Train a meta-model on CSV logs from multiple IPs
-- Warm-start Bayesian optimizer for new IPs using prior knowledge
-- IP similarity scoring
+### Phase 16: Transfer Learning Across IPs (full meta-model)
+- Train a meta-model on CSV logs from multiple IPs (Phase 10 already covers the lightweight warm-start; this is the heavier follow-up)
+- IP similarity scoring (cosine over a feature vector built from `SpecPlan`)
+- Pareto-informed prior weighting in the Bayesian acquisition function
 
-### Phase 15: Dashboard / Web UI (extensions on top of `app.py`)
+### Phase 17: Dashboard / Web UI (extensions on top of `app.py`)
 - Real-time convergence plots
 - Interactive constraint tuning
 - Pareto front explorer
 - LLM-as-judge trace screenshot for README
 
-### Phase 16: Workflow Documentation & Diagrams
+### Phase 18: Workflow Documentation & Diagrams
 - Mermaid orchestration diagram in README (renders in GitHub/Confluence/VS Code)
 - ASCII sequence diagram in CLAUDE.md for developer onboarding
 - Per-iteration message flow diagram (strategy → judge → adapt cycle)
 - `--explain` CLI flag already shipped — diagrams are the remaining piece
 
-### Phase 17: Constraint-Regression Polish (Phase 13 already shipped; this is the tail)
+### Phase 19: Constraint-Regression Polish (core auto-relax already shipped; this is the tail)
 - Pareto-front-derived "feasible value" suggestions in the relaxation report
   ("area constraint unreachable, closest was X vs target Y")
 - Compress `_format_synth_context` history to 1-line-per-entry summaries (~40 tokens vs ~180)
 
-### Phase 18: Production Hardening
+### Phase 20: Production Hardening
 - Retry logic for LLM calls (exponential backoff)
 - Token budget tracking
 - Rate limiting
