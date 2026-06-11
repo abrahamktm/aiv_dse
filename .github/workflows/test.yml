@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -27,29 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Diagnostics (emit as annotations for public visibility)
-        if: always()
-        env:
-          PYTHONPATH: src
-        run: |
-          emit() {
-            # GitHub Actions annotation, multi-line via URL-encoded newlines.
-            python3 -c "import sys; s=sys.stdin.read(); print('::error title=' + sys.argv[1] + '::' + s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')[:60000])" "$1"
-          }
-          { python --version; pip list; } 2>&1 | emit "env: python + pip list"
-          { python -c "import aiv_dse" && echo OK || true
-            python -c "import aiv_dse.graph" && echo OK || true
-            python -c "import langgraph" && echo OK || true
-          } 2>&1 | emit "import check"
-          pytest tests/ --collect-only -q 2>&1 | tail -200 | emit "pytest --collect-only"
-
       - name: Run pytest
         env:
           PYTHONPATH: src
-        run: |
-          set -o pipefail
-          if ! pytest tests/ --tb=short -rfE 2>&1 | tee pytest_output.txt; then
-            tail -c 3500 pytest_output.txt | python3 -c "import sys; s=sys.stdin.read(); print('::error title=pytest tail::' + s.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))"
-            awk '/^=+ FAILURES =+/{flag=1} flag' pytest_output.txt | head -c 3500 | python3 -c "import sys; s=sys.stdin.read(); print('::error title=FAILURES section::' + s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')) if s.strip() else None"
-            exit 1
-          fi
+        run: pytest tests/ -v --tb=short

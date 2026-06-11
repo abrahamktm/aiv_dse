@@ -35,7 +35,7 @@ Run: `$env:PYTHONPATH='src'; python -m pytest tests/ -v`
 - **Phase 6**: Multi-objective Pareto front (NSGA-II sampler, Pareto dominance tracking, frontier convergence, weight-based selection)
 - **Phase 7**: LangGraph migration (`src/aiv_dse/graph.py`, cyclic state machine, `--backend graph|loop` CLI switch)
 - **Phase 8**: LLM-layer upgrades — Anthropic prompt caching on advisor calls, opt-in extended thinking on judge (`AIVDSE_JUDGE_THINKING=1`), cross-provider judge (Claude advisor + Gemini judge by default; OpenAI fallback), Reflexion (`lessons_learned` in state, capped at `MAX_LESSONS=10`), PRM-style judge (`AIVDSE_USE_PRM_JUDGE=1`, per-adjustment partial acceptance) — plus `scripts/benchmark.py`, GitHub Actions CI (`.github/workflows/test.yml`), 32-tap FIR sample
-- **Phase 12 partial**: `--explain` CLI flag shipped; Mermaid/ASCII orchestration diagrams still open
+- **Phase 16 partial**: `--explain` CLI flag shipped; Mermaid/ASCII orchestration diagrams still open
 - **Phase 13**: Automatic constraint regression (`src/aiv_dse/core/constraint_relaxer.py`, `--auto-relax / --relax-step-pct / --max-relax-iters` CLI flags)
 
 ---
