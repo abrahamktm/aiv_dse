@@ -27,10 +27,41 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Environment debug (for failure triage)
+        if: always()
+        env:
+          PYTHONPATH: src
+        run: |
+          echo "## Environment" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python --version 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          pip list 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "## Import check" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python -c "import aiv_dse; print('aiv_dse OK')" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          python -c "import aiv_dse.graph; print('aiv_dse.graph OK')" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          python -c "import langgraph; print('langgraph OK')" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "## Pytest collection only" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          pytest tests/ --collect-only -q 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run pytest
         env:
           PYTHONPATH: src
-        run: pytest tests/ -v --tb=short
+        run: |
+          set -o pipefail
+          pytest tests/ -v --tb=long 2>&1 | tee pytest_output.txt
+          rc=${PIPESTATUS[0]}
+          {
+            echo "## Pytest full output"
+            echo '```'
+            cat pytest_output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
 
       - name: Test summary
         if: always()
