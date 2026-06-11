@@ -17,6 +17,8 @@ out/
 *.sqlite
 *.db
 *.log
+# Sample HLS synth log is a test fixture; allow it.
+!samples/rpt/synth.log
 
 # Knowledge cache (auto-generated, can be rebuilt)
 knowledge/.cache/

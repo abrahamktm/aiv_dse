@@ -1,0 +1,23 @@
+INFO: [HLS] Starting HLS synthesis
+INFO: [HLS] Design: fir_filter_top
+INFO: [HLS] Reading TCL configuration from project.tt2.tcl
+INFO: [HLS] Clock period: 10.0 ns
+INFO: [HLS] Applying directives...
+INFO: [SYNTH] Unroll factor: 4
+INFO: [SYNTH] Pipeline depth: 1
+INFO: [SYNTH] Array partition factor: 1
+INFO: [SYNTH] Clock slack: 0.0 ns
+INFO: [SYNTH] DPO mode: none
+INFO: [SYNTH] Flatten: false
+INFO: [SYNTH] Inline: false
+INFO: [SYNTH] Loop merge: false
+INFO: [SYNTH] Bitwidth reduce: false
+INFO: [SYNTH] Resource sharing: false
+WARNING: [TIMING-101] Tight timing constraint detected. Consider relaxing clock period or adding slack.
+INFO: [SYNTH] Scheduling complete. 850 cycles, II=1
+INFO: [SYNTH] Resource allocation complete. 42000 LUTs, 12 DSPs
+INFO: [SYNTH] RTL generation complete.
+SUGGESTION: [OPT-201] Consider enabling DPO_AUTO_ALL to reduce area by 15-20%
+SUGGESTION: [OPT-202] Array partitioning on coeff_mem could improve throughput by 2x
+INFO: [HLS] Synthesis complete. Reports written to out/reports/
+INFO: [HLS] Exit status: SUCCESS

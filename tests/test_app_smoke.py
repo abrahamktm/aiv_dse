@@ -34,8 +34,7 @@ def test_app_imports_cleanly():
 
 def test_app_exposes_gradio_interface():
     """app.py should construct a Gradio Blocks / Interface object."""
-    import gradio as gr
-
+    gr = pytest.importorskip("gradio")
     module = _load_app_module()
     interfaces = [
         v for v in vars(module).values()
