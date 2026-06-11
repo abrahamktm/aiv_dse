@@ -21,65 +21,12 @@ grounded in actual run data.
   or priority the workflow suggests. The workflow adapts to human input, not the
   other way around.
 
-## Stages
+## Scope
 
-### Stage 1: Deterministic Governance Core (no LLM)
-- Policy-as-code (YAML constraints with severity and actions)
-- Report parser with physics validation and poison detection
-- Validator: compare metrics to thresholds, return structured result
-- State history: last 3 runs, delta tracking, convergence detection
-- pytest test suite
-
-### Stage 2: LLM-Powered Exploration (future)
-- Policy-to-prompt bridge (format constraints for LLM context)
-- Pydantic models for structured LLM output (Action DSL + reasoning)
-- LLM proposes constraint adjustments with reasoning grounded in run history
-  ("reduce unroll from 16 to 8 because run RUN-002 showed area=62000, which is
-  24% over the 50000 budget, and run RUN-001 with unroll=4 had area=42000")
-- Confidence field in LLM output -- low confidence triggers HITL review
-- HITL review step: human approves/modifies/rejects proposed constraints
-- Tool calling: LLM can invoke validator and state-query tools directly
-  (read-only -- it can check "what was area in RUN-001?" but cannot write state)
-- EDR (Engineering Decision Record) writer
-- Model-agnostic prompts (work with Claude, GPT, Gemini via LangChain)
-
-### Stage 3: Advanced features (future)
-- Weighted tradeoff scoring (configurable area/latency/power weights)
-- Curated attribute reference (extracted from docs, stored in repo)
-- Convergence detection ("last 3 runs <2% delta -> suggest stopping")
-- Rollback to prior constraint set from state history
-- LLM-as-judge: cross-check primary LLM's reasoning with a second LLM
-  (different provider). If they disagree on the proposed action, escalate
-  to human. Demonstrates adversarial validation, not single-model trust.
-
-### Phase 4: Full HLS Tool Integration
-- 7 new synthesis directives (clock_slack, DPO, flatten, inline, loop_merge, bitwidth_reduce, resource_sharing)
-- Real .rpt file parsing (timing, area, power, synth log)
-- TCL config generation for HLS tools
-- CSV run logger for post-hoc analysis
-
-### Phase 5: SystemC Code-Aware Advisor
-- Regex-based static analysis of SystemC/C++ source (loops, arrays, pragmas, functions)
-- RAG knowledge retriever with TF-IDF, multi-source ingestion, persistent caching
-- LLM code suggestions with priority, category, and expected impact
-
-### Phase 6: Multi-Objective Pareto Front
-- True multi-objective optimization across latency, area, power (replaces single-score)
-- Pareto dominance tracking and front computation with deduplication
-- NSGA-II sampler (Optuna) for multi-objective Bayesian optimization
-- Frontier convergence: front size stable for N updates = converged
-- Weight-based selection from the Pareto front
-- Multi-objective is enabled by default; disable with `--no-multi-objective`
-
-### Future Phases
-- **Phase 7**: Batch/parallel exploration (thread pool, batch acquisition)
-- **Phase 8**: Real HLS tool CI/CD integration (GitHub Actions, regression detection)
-- **Phase 9**: Transfer learning across IPs (meta-model, warm-start)
-- **Phase 10**: LangGraph migration (state machine, checkpointing)
-- **Phase 11**: Dashboard / Web UI (Streamlit, Pareto front explorer)
-- **Phase 12**: Workflow documentation & diagrams
-- **Phase 13**: Automatic constraint regression
-- **Phase 14**: Production hardening (retry logic, token budget, OpenTelemetry)
+This document is the **design contract** (vision, rules, principles). For what's
+currently shipped vs. planned, see `README.md` (feature list, commands) and
+`CLAUDE.md` (file map, current priorities, dev notes). Phase numbering and
+implementation status live there, not here, to keep this document evergreen.
 
 ## Design principles
 
