@@ -27,44 +27,28 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Environment debug (for failure triage)
+      - name: Diagnostics (emit as annotations for public visibility)
         if: always()
         env:
           PYTHONPATH: src
         run: |
-          echo "## Environment" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          python --version 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
-          pip list 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "## Import check" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          python -c "import aiv_dse; print('aiv_dse OK')" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
-          python -c "import aiv_dse.graph; print('aiv_dse.graph OK')" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
-          python -c "import langgraph; print('langgraph OK')" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "## Pytest collection only" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          pytest tests/ --collect-only -q 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          emit() {
+            # GitHub Actions annotation, multi-line via URL-encoded newlines.
+            python3 -c "import sys; s=sys.stdin.read(); print('::error title=' + sys.argv[1] + '::' + s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')[:60000])" "$1"
+          }
+          { python --version; pip list; } 2>&1 | emit "env: python + pip list"
+          { python -c "import aiv_dse" && echo OK || true
+            python -c "import aiv_dse.graph" && echo OK || true
+            python -c "import langgraph" && echo OK || true
+          } 2>&1 | emit "import check"
+          pytest tests/ --collect-only -q 2>&1 | tail -200 | emit "pytest --collect-only"
 
       - name: Run pytest
         env:
           PYTHONPATH: src
         run: |
           set -o pipefail
-          pytest tests/ -v --tb=long 2>&1 | tee pytest_output.txt
-          rc=${PIPESTATUS[0]}
-          {
-            echo "## Pytest full output"
-            echo '```'
-            cat pytest_output.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit "$rc"
-
-      - name: Test summary
-        if: always()
-        env:
-          PYTHONPATH: src
-        run: pytest tests/ --tb=no -q
+          if ! pytest tests/ -v --tb=long 2>&1 | tee pytest_output.txt; then
+            tail -200 pytest_output.txt | python3 -c "import sys; s=sys.stdin.read(); print('::error title=pytest output::' + s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')[:60000])"
+            exit 1
+          fi
