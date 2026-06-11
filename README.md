@@ -1,4 +1,4 @@
-# AI-Driven Hardware Design Optimisation
+# AI-Driven Hardware Design Space Exploration
 
 ![tests](https://github.com/abrahamktm/aiv_dse/actions/workflows/test.yml/badge.svg)
 
