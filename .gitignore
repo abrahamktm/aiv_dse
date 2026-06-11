@@ -31,3 +31,6 @@ knowledge/.cache/
 Thumbs.db
 .vscode/settings.json
 NUL
+
+# Local-only docs (kept off GitHub on purpose)
+WALKTHROUGH.md
