@@ -48,7 +48,11 @@ jobs:
           PYTHONPATH: src
         run: |
           set -o pipefail
-          if ! pytest tests/ -v --tb=long 2>&1 | tee pytest_output.txt; then
-            tail -200 pytest_output.txt | python3 -c "import sys; s=sys.stdin.read(); print('::error title=pytest output::' + s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')[:60000])"
+          if ! pytest tests/ --tb=short -rfE 2>&1 | tee pytest_output.txt; then
+            # Annotation limit ~4KB; emit only the relevant tail.
+            tail -c 3500 pytest_output.txt | python3 -c "import sys; s=sys.stdin.read(); print('::error title=pytest tail::' + s.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))"
+            # And the explicit FAILURES section if present.
+            awk '/^=+ FAILURES =+/{flag=1} flag' pytest_output.txt | head -c 3500 | python3 -c "import sys; s=sys.stdin.read();
+if s.strip(): print('::error title=FAILURES section::' + s.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))"
             exit 1
           fi
