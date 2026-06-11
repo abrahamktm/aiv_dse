@@ -1,4 +1,4 @@
-# AIV-DSE -- Agentic Design Space Exploration
+# AI-Driven Hardware Design Optimisation
 
 ![tests](https://github.com/abrahamktm/aiv_dse/actions/workflows/test.yml/badge.svg)
 
@@ -287,6 +287,46 @@ that. This makes the system auditable and safe for production use.
 │  └──────────────────┘   └─────────────────┘                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## What's in this repo (beginner-friendly file map)
+
+A plain-English tour of where things live. Skip to **Quick Start** if you already
+know the layout.
+
+### Source code — `src/aiv_dse/`
+
+The main brain of the project.
+
+| Folder / file | What it does |
+|---|---|
+| `adapters/` | Plug-ins for hardware synthesis tools. `dummy_hls.py` is a fake simulator (used for tests and demos — no real tool needed). `hls_tool.py` is the shape of a real-tool adapter. `report_parser.py` and `rpt_parser.py` read the output files HLS tools produce. `tcl_writer.py` writes the config files HLS tools consume. |
+| `core/` | The decision-making logic — runs without any AI. `validator.py` checks results against the policy. `state.py` and `history.py` remember what happened in past iterations. `pareto.py` tracks the best tradeoffs. `bayesian_advisor.py` uses statistics to pick the next experiment. `shadow_heuristic.py` is a simple "dumb" baseline to compare the AI against. `constraint_relaxer.py` notices when a target is impossible and suggests loosening it. `code_analyzer.py` + `knowledge_retriever.py` scan SystemC source code and pull relevant HLS tips. `csv_logger.py` writes every run to a CSV. `visualize.py` plots the Pareto front. |
+| `llm/` | Everything AI-related. `config.py` picks which provider (Claude / OpenAI / Gemini). `models.py` defines the strict shapes AI responses must take. `prompt_formatter.py` builds the prompt. `constraint_advisor.py` + `synth_advisor.py` + `code_advisor.py` ask the AI for suggestions. `judge.py` is the **second AI** that double-checks the first one. `spec_planner.py` reads an IP spec (txt/pdf) and turns it into starting parameters. |
+| `workflow/` | Human-in-the-loop bits. `hitl.py` asks the user to review when AIs disagree. `edr_writer.py` writes the "Engineering Decision Record" — a paper trail of why each decision was made. |
+| `graph.py` | The conductor. Wires synthesize → validate → record → decide-what-next → apply → loop, using LangGraph as the state machine. |
+| `run_loop.py` | Command-line entry point for the full closed-loop exploration. `python -m aiv_dse.run_loop ...` |
+| `run_stage1.py`, `run_stage2.py` | Older / smaller CLIs that only run early stages (deterministic validation, single-LLM advisor). |
+| `tracing.py` | Optional observability — pipes every AI call to Langfuse if you set the env vars. |
+
+### Top-level files
+
+| File / folder | What it does |
+|---|---|
+| `app.py` | Web UI built with Gradio. Run `python app.py` to use the system in a browser instead of from the command line. |
+| `scripts/benchmark.py` | Reproducible head-to-head comparison of the three strategies (shadow vs Bayesian vs LLM) on synthetic data. |
+| `policy/default_policy.yaml` | The constraint rules — your latency / area / power targets. Edit this to change what counts as "passing". |
+| `samples/` | Example synthesis reports (`report_pass.json`, `report_fail.json`, `poison_report.json`), sample HLS reports under `samples/rpt/`, and a SystemC source example `fir_filter_design.cpp`. Lets you run everything without a real HLS tool. |
+| `specs/` | Example IP specifications in plain text — `ip_spec_example.txt` (FFT-256) and `ip_spec_fir.txt` (32-tap FIR). The spec planner reads these. |
+| `tests/` | The automated test suite (218+ tests). All mocked, no API keys required. Run with `pytest tests/`. |
+| `knowledge/` | Hand-curated HLS tips/docs that the RAG retriever indexes. |
+| `requirements.txt`, `pyproject.toml` | Python dependencies and package metadata. |
+| `README.md` | What you're reading. The "what is this / how to use" doc. |
+| `CLAUDE.md` | Developer / agent-facing notes — file map with shorter jargon-y descriptions, current phase status, dev quick-commands. |
+| `PROJECT_BRIEF.md` | The design contract — vision, hard rules ("LLM proposes, validator disposes"), and design principles. |
+| `.github/workflows/test.yml` | GitHub Actions config — runs the test suite on every push and PR. |
+| `LICENSE` | MIT. |
 
 ---
 
